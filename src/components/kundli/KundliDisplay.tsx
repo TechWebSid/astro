@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { KundliResult, DoshaAnalysis, DashaPeriod } from '@/lib/engine/types';
+import { KundliResult, DoshaAnalysis, DashaPeriod, ChartDivision } from '@/lib/engine/types';
 import { NorthIndianChart, SouthIndianChart } from '@/components/charts/KundliChart';
 import {
   Compass,
@@ -26,13 +26,23 @@ export const KundliDisplay: React.FC<KundliDisplayProps> = ({
   dasha
 }) => {
   const [chartType, setChartType] = useState<'north' | 'south'>('north');
-  const [activeTab, setActiveTab] = useState<'chart' | 'planets' | 'doshas' | 'dasha'>('chart');
+  const [division, setDivision] = useState<ChartDivision>('D1');
+  const [activeTab, setActiveTab] = useState<'chart' | 'planets' | 'dasha' | 'doshas'>('chart');
   const [expandedMaha, setExpandedMaha] = useState<string | null>(
     dasha?.find((d) => d.isCurrent)?.planet || null
   );
+  const [expandedAntar, setExpandedAntar] = useState<string | null>(null);
 
   const currentDasha = dasha?.find((d) => d.isCurrent);
   const currentAntar = currentDasha?.subDashas?.find((s) => s.isCurrent);
+  const currentPratyantar = currentAntar?.pratyantardashas?.find((p) => p.isCurrent);
+
+  const divisions: { id: ChartDivision; label: string }[] = [
+    { id: 'D1', label: 'D1 Lagna' },
+    { id: 'D9', label: 'D9 Navamsa' },
+    { id: 'D10', label: 'D10 Dasamsa' },
+    { id: 'Moon', label: 'Moon Chart' }
+  ];
 
   return (
     <div className="clean-card p-5 sm:p-7">
@@ -54,11 +64,15 @@ export const KundliDisplay: React.FC<KundliDisplayProps> = ({
         <div className="flex gap-2">
           <div className="bg-violet-50 border border-violet-100 rounded-lg px-3 py-1.5 text-center">
             <span className="text-[10px] text-slate-500 block">Lagna (Ascendant)</span>
-            <span className="text-xs font-bold text-violet-700">{kundli.ascendant.signName}</span>
+            <span className="text-xs font-bold text-violet-700">
+              {kundli.ascendant.signName} ({kundli.ascendant.degreeFormatted.split("'")[0]}&apos;)
+            </span>
           </div>
           <div className="bg-violet-50 border border-violet-100 rounded-lg px-3 py-1.5 text-center">
             <span className="text-[10px] text-slate-500 block">Nakshatra</span>
-            <span className="text-xs font-bold text-violet-700">{kundli.nakshatra.name}</span>
+            <span className="text-xs font-bold text-violet-700">
+              {kundli.nakshatra.name} (P{kundli.nakshatra.pada})
+            </span>
           </div>
         </div>
       </div>
@@ -66,8 +80,8 @@ export const KundliDisplay: React.FC<KundliDisplayProps> = ({
       {/* Navigation Tabs */}
       <div className="flex gap-1.5 overflow-x-auto pb-2 border-b border-slate-100 mb-6">
         {[
-          { id: 'chart', label: 'Horoscope Chart', icon: Compass },
-          { id: 'planets', label: 'Planetary Degrees', icon: Star },
+          { id: 'chart', label: 'Charts (D1/D9/D10)', icon: Compass },
+          { id: 'planets', label: 'Planetary Degrees & Dignity', icon: Star },
           { id: 'dasha', label: 'Vimshottari Dasha', icon: Clock },
           { id: 'doshas', label: 'Doshas & Remedies', icon: ShieldCheck }
         ].map((tab) => {
@@ -93,8 +107,25 @@ export const KundliDisplay: React.FC<KundliDisplayProps> = ({
       {/* Tab 1: Chart View */}
       {activeTab === 'chart' && (
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-xs font-bold text-slate-800">Chart Format:</span>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            {/* Divisional Chart Selector */}
+            <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 overflow-x-auto">
+              {divisions.map((div) => (
+                <button
+                  key={div.id}
+                  onClick={() => setDivision(div.id)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold cursor-pointer whitespace-nowrap ${
+                    division === div.id
+                      ? 'bg-white text-violet-700 shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {div.label}
+                </button>
+              ))}
+            </div>
+
+            {/* North / South Selector */}
             <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
               <button
                 onClick={() => setChartType('north')}
@@ -102,7 +133,7 @@ export const KundliDisplay: React.FC<KundliDisplayProps> = ({
                   chartType === 'north' ? 'bg-white text-slate-900 shadow-2xs font-bold' : 'text-slate-500'
                 }`}
               >
-                North Indian
+                North
               </button>
               <button
                 onClick={() => setChartType('south')}
@@ -110,52 +141,72 @@ export const KundliDisplay: React.FC<KundliDisplayProps> = ({
                   chartType === 'south' ? 'bg-white text-slate-900 shadow-2xs font-bold' : 'text-slate-500'
                 }`}
               >
-                South Indian
+                South
               </button>
             </div>
           </div>
 
           <div className="py-2">
             {chartType === 'north' ? (
-              <NorthIndianChart kundli={kundli} />
+              <NorthIndianChart kundli={kundli} division={division} />
             ) : (
-              <SouthIndianChart kundli={kundli} />
+              <SouthIndianChart kundli={kundli} division={division} />
             )}
           </div>
         </div>
       )}
 
-      {/* Tab 2: Planetary Positions */}
+      {/* Tab 2: Planetary Positions (Horocosmo-level detail) */}
       {activeTab === 'planets' && (
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold">
-                <th className="py-2.5 px-3">Planet</th>
-                <th className="py-2.5 px-3">Sign</th>
-                <th className="py-2.5 px-3">House</th>
-                <th className="py-2.5 px-3">Degrees</th>
-                <th className="py-2.5 px-3">Nakshatra</th>
-                <th className="py-2.5 px-3">Status</th>
+                <th className="py-2.5 px-2.5">Planet</th>
+                <th className="py-2.5 px-2.5">Sign</th>
+                <th className="py-2.5 px-2.5">House</th>
+                <th className="py-2.5 px-2.5">Degree</th>
+                <th className="py-2.5 px-2.5">Nakshatra</th>
+                <th className="py-2.5 px-2.5">Dignity</th>
+                <th className="py-2.5 px-2.5">Avastha</th>
+                <th className="py-2.5 px-2.5">Karaka</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {kundli.planets.map((p) => (
                 <tr key={p.name} className="hover:bg-slate-50/70">
-                  <td className="py-2.5 px-3 font-bold text-slate-900">{p.name}</td>
-                  <td className="py-2.5 px-3 text-slate-700">{p.signName}</td>
-                  <td className="py-2.5 px-3 text-slate-700">{p.house}th House</td>
-                  <td className="py-2.5 px-3 text-slate-600 font-mono">{p.degreeInSign.toFixed(2)}°</td>
-                  <td className="py-2.5 px-3 text-slate-600">{p.nakshatraName} (Pada {p.pada})</td>
-                  <td className="py-2.5 px-3">
-                    {p.isRetrograde ? (
-                      <span className="text-[10px] bg-red-50 text-red-700 font-bold px-1.5 py-0.5 rounded border border-red-200">
-                        Retrograde
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-slate-400">Direct</span>
+                  <td className="py-2.5 px-2.5 font-bold text-slate-900 whitespace-nowrap">
+                    {p.name}
+                    {p.isRetrograde && (
+                      <span className="ml-1 text-[9px] bg-red-50 text-red-700 px-1 rounded border border-red-200">R</span>
+                    )}
+                    {p.isCombust && (
+                      <span className="ml-1 text-[9px] bg-amber-50 text-amber-700 px-1 rounded border border-amber-200">C</span>
                     )}
                   </td>
+                  <td className="py-2.5 px-2.5 text-slate-700">{p.signName}</td>
+                  <td className="py-2.5 px-2.5 text-slate-700">{p.house}</td>
+                  <td className="py-2.5 px-2.5 text-slate-700 font-mono whitespace-nowrap">{p.degreeFormatted}</td>
+                  <td className="py-2.5 px-2.5 text-slate-600 whitespace-nowrap">
+                    {p.nakshatraName} (P{p.pada})
+                  </td>
+                  <td className="py-2.5 px-2.5">
+                    <span
+                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                        p.dignity === 'Exalted'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : p.dignity === 'Debilitated'
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                          : p.dignity === 'Own Sign'
+                          ? 'bg-violet-50 text-violet-700 border border-violet-200'
+                          : 'text-slate-500'
+                      }`}
+                    >
+                      {p.dignity || 'Neutral'}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-2.5 text-slate-600">{p.avastha || '—'}</td>
+                  <td className="py-2.5 px-2.5 font-bold text-violet-700">{p.charaKaraka || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -163,21 +214,23 @@ export const KundliDisplay: React.FC<KundliDisplayProps> = ({
         </div>
       )}
 
-      {/* Tab 3: Vimshottari Dasha */}
+      {/* Tab 3: Vimshottari Dasha (3 Levels: Maha -> Antar -> Pratyantar) */}
       {activeTab === 'dasha' && dasha && (
         <div className="space-y-4">
           {currentDasha && (
             <div className="bg-violet-50 border border-violet-200 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
                 <span className="text-[10px] font-bold text-violet-800 uppercase tracking-wider block">
-                  Active Running Period
+                  Active Running Period (Maha • Antar • Pratyantar)
                 </span>
                 <div className="text-base font-black text-slate-900 mt-0.5">
-                  {currentDasha.planet} Mahadasha
-                  {currentAntar && <span className="text-violet-700"> • {currentAntar.planet} Antardasha</span>}
+                  {currentDasha.planet}
+                  {currentAntar && <span className="text-violet-700"> → {currentAntar.planet}</span>}
+                  {currentPratyantar && <span className="text-violet-600"> → {currentPratyantar.planet}</span>}
                 </div>
                 <div className="text-xs text-slate-500 mt-0.5">
-                  Mahadasha span: {currentDasha.startDate} to {currentDasha.endDate}
+                  Mahadasha: {currentDasha.startDate} to {currentDasha.endDate}
+                  {currentPratyantar && ` • Pratyantar ends ${currentPratyantar.endDate}`}
                 </div>
               </div>
               <span className="text-xs font-bold bg-violet-600 text-white px-3 py-1 rounded-full shadow-2xs">
@@ -210,27 +263,56 @@ export const KundliDisplay: React.FC<KundliDisplayProps> = ({
                   </button>
 
                   {isExpanded && period.subDashas && (
-                    <div className="p-3 bg-white border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      {period.subDashas.map((sub) => (
-                        <div
-                          key={sub.planet}
-                          className={`p-2.5 rounded-lg border flex items-center justify-between ${
-                            sub.isCurrent ? 'bg-violet-50 border-violet-300' : 'bg-slate-50/50 border-slate-200'
-                          }`}
-                        >
-                          <div>
-                            <span className="font-semibold text-slate-900">{sub.planet} Antar</span>
-                            {sub.isCurrent && (
-                              <span className="text-[9px] bg-violet-600 text-white font-bold px-1.5 py-0.2 rounded ml-1.5">
-                                Active Now
-                              </span>
+                    <div className="p-3 bg-white border-t border-slate-200 space-y-2 text-xs">
+                      {period.subDashas.map((sub) => {
+                        const antarKey = `${period.planet}-${sub.planet}`;
+                        const isAntarOpen = expandedAntar === antarKey;
+                        return (
+                          <div
+                            key={sub.planet}
+                            className={`rounded-lg border overflow-hidden ${
+                              sub.isCurrent ? 'border-violet-300 bg-violet-50/50' : 'border-slate-200 bg-slate-50/40'
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => setExpandedAntar(isAntarOpen ? null : antarKey)}
+                              className="w-full p-2.5 flex items-center justify-between cursor-pointer text-left"
+                            >
+                              <div>
+                                <span className="font-semibold text-slate-900">{sub.planet} Antardasha</span>
+                                {sub.isCurrent && (
+                                  <span className="text-[9px] bg-violet-600 text-white font-bold px-1.5 py-0.2 rounded ml-1.5">
+                                    Active
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                                <span>{sub.startDate} – {sub.endDate}</span>
+                                <ChevronDown className={`w-3 h-3 transition-transform ${isAntarOpen ? 'rotate-180' : ''}`} />
+                              </div>
+                            </button>
+
+                            {isAntarOpen && sub.pratyantardashas && (
+                              <div className="px-2.5 pb-2.5 pt-1.5 border-t border-slate-200/70 bg-white grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                                {sub.pratyantardashas.map((pr) => (
+                                  <div
+                                    key={pr.planet}
+                                    className={`px-2 py-1.5 rounded border text-[10px] flex items-center justify-between ${
+                                      pr.isCurrent
+                                        ? 'bg-violet-50 border-violet-300 font-bold text-violet-900'
+                                        : 'bg-slate-50 border-slate-100 text-slate-600'
+                                    }`}
+                                  >
+                                    <span>{pr.planet}</span>
+                                    <span>{pr.startDate}</span>
+                                  </div>
+                                ))}
+                              </div>
                             )}
                           </div>
-                          <span className="text-[11px] text-slate-500">
-                            {sub.startDate} – {sub.endDate}
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -243,7 +325,6 @@ export const KundliDisplay: React.FC<KundliDisplayProps> = ({
       {/* Tab 4: Doshas & Remedies */}
       {activeTab === 'doshas' && doshas && (
         <div className="space-y-4">
-          {/* Manglik */}
           <div className={`p-4 rounded-xl border ${doshas.manglik.isManglik ? 'bg-red-50/70 border-red-200' : 'bg-emerald-50/70 border-emerald-200'}`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -260,7 +341,6 @@ export const KundliDisplay: React.FC<KundliDisplayProps> = ({
             </div>
           </div>
 
-          {/* Kaal Sarp */}
           <div className={`p-4 rounded-xl border ${doshas.kaalSarp.hasKaalSarp ? 'bg-amber-50/70 border-amber-200' : 'bg-emerald-50/70 border-emerald-200'}`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -277,7 +357,6 @@ export const KundliDisplay: React.FC<KundliDisplayProps> = ({
             </div>
           </div>
 
-          {/* Sade Sati */}
           <div className="p-4 rounded-xl border bg-violet-50/50 border-violet-200">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">

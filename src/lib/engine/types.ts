@@ -26,6 +26,33 @@ export interface PlanetInfo {
   nakshatraLord: string;
   pada: number; // 1 to 4
   isRetrograde: boolean;
+  isCombust?: boolean;
+  dignity?: 'Exalted' | 'Debilitated' | 'Own Sign' | 'Neutral';
+  avastha?: 'Bala' | 'Kumara' | 'Yuva' | 'Vriddha' | 'Mrita';
+  charaKaraka?: string;
+}
+
+export type ChartDivision = 'D1' | 'D9' | 'D10' | 'Moon';
+
+export interface DivisionalChartData {
+  division: ChartDivision;
+  title: string;
+  ascSignIndex: number;
+  ascSignName: string;
+  ascDegreeShort: string;
+  houses: {
+    houseNumber: number;
+    signIndex: number;
+    signName: string;
+    planets: {
+      name: string;
+      shortDeg: string;
+      fullDeg: string;
+      isRetrograde: boolean;
+      isCombust?: boolean;
+      dignity?: 'Exalted' | 'Debilitated' | 'Own Sign' | 'Neutral';
+    }[];
+  }[];
 }
 
 export interface HouseInfo {
@@ -96,6 +123,12 @@ export interface DashaPeriod {
     startDate: string;
     endDate: string;
     isCurrent: boolean;
+    pratyantardashas?: {
+      planet: string;
+      startDate: string;
+      endDate: string;
+      isCurrent: boolean;
+    }[];
   }[];
 }
 

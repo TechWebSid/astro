@@ -7,7 +7,9 @@ import {
   DoshaAnalysis,
   DashaPeriod,
   PanchangResult,
-  MatchingResult
+  MatchingResult,
+  ChartDivision,
+  DivisionalChartData
 } from './types';
 import {
   ZODIAC_SIGNS,
@@ -172,6 +174,37 @@ export function calculateKundli(details: BirthDetails): KundliResult {
     const nakshatra = NAKSHATRAS[nakshatraIndex] || NAKSHATRAS[0];
     const pada = Math.floor((siderealLong % nakshatraSpan) / (nakshatraSpan / 4)) + 1;
 
+    // Planetary Dignity (Exalted / Debilitated / Own Sign)
+    const EXALTATION_SIGN: Record<string, number> = {
+      Sun: 0, Moon: 1, Mars: 9, Mercury: 5, Jupiter: 3, Venus: 11, Saturn: 6, Rahu: 1, Ketu: 7
+    };
+    const DEBILITATION_SIGN: Record<string, number> = {
+      Sun: 6, Moon: 7, Mars: 3, Mercury: 11, Jupiter: 9, Venus: 5, Saturn: 0, Rahu: 7, Ketu: 1
+    };
+    const OWN_SIGNS: Record<string, number[]> = {
+      Sun: [4],
+      Moon: [3],
+      Mars: [0, 7],
+      Mercury: [2, 5],
+      Jupiter: [8, 11],
+      Venus: [1, 6],
+      Saturn: [9, 10],
+      Rahu: [10],
+      Ketu: [7]
+    };
+
+    let dignity: PlanetInfo['dignity'] = 'Neutral';
+    if (EXALTATION_SIGN[cfg.name] === signIndex) dignity = 'Exalted';
+    else if (DEBILITATION_SIGN[cfg.name] === signIndex) dignity = 'Debilitated';
+    else if (OWN_SIGNS[cfg.name]?.includes(signIndex)) dignity = 'Own Sign';
+
+    // Planetary Avastha (odd vs even sign Baladi Avastha)
+    const isOddSign = signIndex % 2 === 0; // 0=Aries (1st, odd)
+    const seg = Math.min(4, Math.floor(degreeInSign / 6));
+    const avasthaOrderOdd: PlanetInfo['avastha'][] = ['Bala', 'Kumara', 'Yuva', 'Vriddha', 'Mrita'];
+    const avasthaOrderEven: PlanetInfo['avastha'][] = ['Mrita', 'Vriddha', 'Yuva', 'Kumara', 'Bala'];
+    const avastha = isOddSign ? avasthaOrderOdd[seg] : avasthaOrderEven[seg];
+
     planets.push({
       name: cfg.name,
       symbol: cfg.symbol,
@@ -188,9 +221,49 @@ export function calculateKundli(details: BirthDetails): KundliResult {
       nakshatraName: nakshatra.name,
       nakshatraLord: nakshatra.lord,
       pada,
-      isRetrograde
+      isRetrograde,
+      dignity,
+      avastha
     });
   }
+
+  // Combustion check relative to Sun's sidereal longitude
+  const sunPlanet = planets.find((p) => p.name === 'Sun');
+  if (sunPlanet) {
+    const combustOrbs: Record<string, number> = {
+      Moon: 12,
+      Mars: 17,
+      Mercury: 14,
+      Jupiter: 11,
+      Venus: 10,
+      Saturn: 15
+    };
+    for (const p of planets) {
+      if (p.name === 'Sun' || p.name === 'Rahu' || p.name === 'Ketu') {
+        p.isCombust = false;
+        continue;
+      }
+      let orb = combustOrbs[p.name] || 0;
+      if (p.isRetrograde && (p.name === 'Mercury' || p.name === 'Venus')) orb -= 2;
+      let diff = Math.abs(p.siderealLong - sunPlanet.siderealLong);
+      if (diff > 180) diff = 360 - diff;
+      p.isCombust = diff <= orb;
+    }
+  }
+
+  // Jaimini Chara Karakas (7-karaka scheme: Sun..Saturn sorted by degreeInSign descending)
+  const karakaLabels = ['AK', 'AmK', 'BK', 'MK', 'PK', 'GK', 'DK'];
+  const sevenPlanets = planets
+    .filter((p) => !['Rahu', 'Ketu'].includes(p.name))
+    .sort((a, b) => b.degreeInSign - a.degreeInSign);
+  sevenPlanets.forEach((p, idx) => {
+    p.charaKaraka = karakaLabels[idx];
+  });
+  planets
+    .filter((p) => ['Rahu', 'Ketu'].includes(p.name))
+    .forEach((p) => {
+      p.charaKaraka = '—';
+    });
 
   const houses: HouseInfo[] = [];
   for (let h = 1; h <= 12; h++) {
@@ -373,7 +446,7 @@ export function calculateVimshottariDasha(kundli: KundliResult): DashaPeriod[] {
 
   let currentDate = new Date(birthDate.getTime());
 
-  // Function to build Antardashas within a Mahadasha
+  // Function to build Antardashas + Pratyantardashas within a Mahadasha
   const generateAntarDashas = (mahaLord: string, mStartDate: Date, mEndDate: Date) => {
     const mIdx = DASHA_SEQUENCE.indexOf(mahaLord);
     const mTotalMs = mEndDate.getTime() - mStartDate.getTime();
@@ -387,11 +460,32 @@ export function calculateVimshottariDasha(kundli: KundliResult): DashaPeriod[] {
       const subStart = new Date(curMs);
       const subEnd = new Date(endMs);
 
+      // 3rd Level: Pratyantardashas inside each Antardasha
+      const aIdx = DASHA_SEQUENCE.indexOf(antarLord);
+      const aTotalMs = endMs - curMs;
+      const pratyantars: NonNullable<DashaPeriod['subDashas']>[number]['pratyantardashas'] = [];
+      let pCurMs = curMs;
+      for (let k = 0; k < 9; k++) {
+        const pLord = DASHA_SEQUENCE[(aIdx + k) % 9];
+        const pShare = (VIMSHOTTARI_YEARS[pLord] / 120) * aTotalMs;
+        const pEndMs = pCurMs + pShare;
+        const pStart = new Date(pCurMs);
+        const pEnd = new Date(pEndMs);
+        pratyantars.push({
+          planet: pLord,
+          startDate: pStart.toISOString().split('T')[0],
+          endDate: pEnd.toISOString().split('T')[0],
+          isCurrent: now >= pStart && now <= pEnd
+        });
+        pCurMs = pEndMs;
+      }
+
       subs.push({
         planet: antarLord,
         startDate: subStart.toISOString().split('T')[0],
         endDate: subEnd.toISOString().split('T')[0],
-        isCurrent: now >= subStart && now <= subEnd
+        isCurrent: now >= subStart && now <= subEnd,
+        pratyantardashas: pratyantars
       });
 
       curMs = endMs;
@@ -464,6 +558,98 @@ function findTransitionTime(
     prev = t;
   }
   return null;
+}
+
+function formatShortDeg(degInSign: number): string {
+  const d = Math.floor(degInSign);
+  const m = Math.floor((degInSign - d) * 60);
+  return `${String(d).padStart(2, '0')}°${String(m).padStart(2, '0')}'`;
+}
+
+function getNavamsaSignIndex(signIndex: number, degInSign: number): number {
+  const padaIdx = Math.min(8, Math.floor(degInSign / (30 / 9)));
+  // Fire (0,4,8)->0(Aries), Earth (1,5,9)->9(Capricorn), Air (2,6,10)->6(Libra), Water (3,7,11)->3(Cancer)
+  const mod = signIndex % 4;
+  const startSign = mod === 0 ? 0 : mod === 1 ? 9 : mod === 2 ? 6 : 3;
+  return (startSign + padaIdx) % 12;
+}
+
+function getDasamsaSignIndex(signIndex: number, degInSign: number): number {
+  const partIdx = Math.min(9, Math.floor(degInSign / 3));
+  // Odd signs (0,2,4...): start from same sign; Even signs (1,3,5...): start from 9th sign (+8)
+  const startSign = signIndex % 2 === 0 ? signIndex : (signIndex + 8) % 12;
+  return (startSign + partIdx) % 12;
+}
+
+export function calculateDivisionalChart(
+  kundli: KundliResult,
+  division: ChartDivision
+): DivisionalChartData {
+  const titles: Record<ChartDivision, string> = {
+    D1: 'Lagna Chart (D1)',
+    D9: 'Navamsa Chart (D9)',
+    D10: 'Dasamsa Chart (D10)',
+    Moon: 'Chandra Kundli (Moon)'
+  };
+
+  let ascSignIndex = kundli.ascendant.signIndex;
+  let ascDegShort = formatShortDeg(kundli.ascendant.degreeInSign);
+
+  if (division === 'D9') {
+    ascSignIndex = getNavamsaSignIndex(kundli.ascendant.signIndex, kundli.ascendant.degreeInSign);
+  } else if (division === 'D10') {
+    ascSignIndex = getDasamsaSignIndex(kundli.ascendant.signIndex, kundli.ascendant.degreeInSign);
+  } else if (division === 'Moon') {
+    const moon = kundli.planets.find((p) => p.name === 'Moon');
+    if (moon) {
+      ascSignIndex = moon.signIndex;
+      ascDegShort = formatShortDeg(moon.degreeInSign);
+    }
+  }
+
+  const houses: DivisionalChartData['houses'] = Array.from({ length: 12 }, (_, i) => {
+    const hNum = i + 1;
+    const sIdx = (ascSignIndex + i) % 12;
+    return {
+      houseNumber: hNum,
+      signIndex: sIdx,
+      signName: ZODIAC_SIGNS[sIdx].name,
+      planets: []
+    };
+  });
+
+  for (const p of kundli.planets) {
+    let targetSign = p.signIndex;
+    if (division === 'D9') {
+      targetSign = getNavamsaSignIndex(p.signIndex, p.degreeInSign);
+    } else if (division === 'D10') {
+      targetSign = getDasamsaSignIndex(p.signIndex, p.degreeInSign);
+    }
+
+    let houseNum = targetSign - ascSignIndex + 1;
+    if (houseNum <= 0) houseNum += 12;
+
+    const houseObj = houses.find((h) => h.houseNumber === houseNum);
+    if (houseObj) {
+      houseObj.planets.push({
+        name: p.name,
+        shortDeg: formatShortDeg(p.degreeInSign),
+        fullDeg: p.degreeFormatted,
+        isRetrograde: p.isRetrograde,
+        isCombust: p.isCombust,
+        dignity: p.dignity
+      });
+    }
+  }
+
+  return {
+    division,
+    title: titles[division],
+    ascSignIndex,
+    ascSignName: ZODIAC_SIGNS[ascSignIndex].name,
+    ascDegreeShort: ascDegShort,
+    houses
+  };
 }
 
 export function calculatePanchang(
